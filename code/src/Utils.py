@@ -28,8 +28,8 @@ class RemakeCOCOformat():
         self.ratio = ratio
         
         if data_lst:
-            self.images = [ os.path.join(self.base_img_path,f.replace('.json', '.jpg')) for f in data_lst ]
-            self.annotations = [ os.path.join(self.base_label_path,f.replace('.jpg', '.json')) for f in data_lst ]
+            self.images = [ os.path.join(self.base_img_path, f.replace('.json', '.jpg')) for f in data_lst ]
+            self.annotations = [ os.path.join(self.base_label_path, f.replace('.jpg', '.json')) for f in data_lst ]
             self.train_fn = alis
             
         if n_sample:
@@ -65,26 +65,26 @@ class RemakeCOCOformat():
                             a['category_id'] = self.labeling_schme.index(a[self.task])
                         else:
                             a['category_id'] = len(self.labeling_schme)
-                    a['segmentation'] = [a['segmentation']]
-
+                    # a['segmentation'] = [a['segmentation']]
+                    segs = []
+                    anns = a['segmentation'][0][0]
+                    for ann in anns:
+                        segs.extend(ann)
+                    a['segmentation'] = [segs]
                     d['annotations'].append(a)
 
         return d
-            
-    
+
     def coco_json(self):
         train = self.load_json(self.annotations[0])
         train['images'] = []
         train['annotations'] = []
-                
 
         if self.labeling_schme:
-            cates = [{"id":i+1, "name":v}for i,v in enumerate(self.labeling_schme)]
+            cates = [{"id": i+1, "name": v} for i, v in enumerate(self.labeling_schme)]
             if self.task == 'part':
-                cates.append({"id":len(self.labeling_schme)+1, "name":'etc'})
+                cates.append({"id": len(self.labeling_schme)+1, "name": 'etc'})
             train['categories']= cates
-                
-
         
         train_imgs = [] 
 
@@ -94,8 +94,6 @@ class RemakeCOCOformat():
 
             if len(ann_info) != 0:
                 train_imgs.append(i)
-        
-
       
         train = self.rebuilding(train, train_imgs)
         print(len(train['images'])) 
@@ -122,7 +120,6 @@ class RemakeCOCOformat():
             os.makedirs("data/Dataset/2.라벨링데이터/damage_part")
 
         self.save_json(train, os.path.join("data/datainfo" ,self.train_fn + ".json"))
-        
 
 
 def label_split(data_dir):
@@ -134,10 +131,10 @@ def label_split(data_dir):
         return ann
     
     label_schme = {
-    1:{"files":[],"label_info":'스크래치'},
-    2:{"files":[],"label_info":'파손'},
-    3:{"files":[],"label_info":'찌그러짐'},
-    4:{"files":[],"label_info":'이격'},    
+        1:{"files":[],"label_info":'스크래치'},
+        2:{"files":[],"label_info":'파손'},
+        3:{"files":[],"label_info":'찌그러짐'},
+        4:{"files":[],"label_info":'이격'},
     }
 
     for ann in annotations:
@@ -153,9 +150,8 @@ def label_split(data_dir):
         coco.coco_json()
 
     return label_schme
-        
 
-
+       
 def label_accuracy_score(hist):
     """
     Returns accuracy score evaluation result.
@@ -184,9 +180,6 @@ def label_accuracy_score(hist):
     return acc, acc_cls, mean_iu, fwavacc, cls_iu
 
 
-
-
-
 def _fast_hist(label_true, label_pred, n_class):
     mask = (label_true >= 0) & (label_true < n_class)
     hist = np.bincount(n_class * label_true[mask].astype(int) + label_pred[mask],
@@ -203,6 +196,7 @@ def add_hist(hist, label_trues, label_preds, n_class):
         hist += _fast_hist(lt.flatten(), lp.flatten(), n_class)
 
     return hist
+
 
 class FocalLoss(nn.Module):
     "Non weighted version of Focal Loss"
@@ -233,7 +227,7 @@ if __name__ == "__main__":
         if (arg.task == "all" or arg.task == "part"):
             # part
             print("make_cocoformat[part]")
-            label_df = pd.read_csv('code/part_labeling.csv')
+            label_df = pd.read_csv('code/part_labeling_new.csv')
 
             dir_name_img = 'data/Dataset/1.원천데이터/damage_part'
             dir_name_label = 'data/Dataset/2.라벨링데이터/damage_part'
@@ -248,16 +242,16 @@ if __name__ == "__main__":
 
             for dt in ['train','val','test']:
                 tmp = list(label_df.loc[label_df.dataset == dt]['img_id'])
-                tmp = RemakeCOCOformat(img_dir = dir_name_img, ann_dir = dir_name_label, data_lst = tmp, alis= f'part_{dt}', ratio=0.1, labeling_schme=l_sch, task='part')
+                data = RemakeCOCOformat(img_dir = dir_name_img, ann_dir = dir_name_label, data_lst = tmp, alis= f'part_{dt}', ratio=0.1, labeling_schme=l_sch, task='part')
                 ### dt_25cls 수정 요망
-                tmp.coco_json()
+                data.coco_json()
             print('Done part')
 
         if (arg.task == "all" or arg.task == "damage"):
             # damage
             print("make_cocoformat[damage]")
 
-            label_df = pd.read_csv('code/damage_labeling.csv')
+            label_df = pd.read_csv('code/damage_labeling_new.csv')
             label_df = label_df.loc[label_df.total_anns > 0]
             print(len(label_df))
 

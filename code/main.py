@@ -98,7 +98,7 @@ if __name__ == "__main__":
                             device = "cuda")
                 trainer.train()
         # train damage one label
-        elif (arg.task == 'demage') & (arg.method == 'multi'):
+        elif (arg.task == 'damage') & (arg.method == 'multi'):
             trainer = Trainer(
                         ails = f"{arg.task}_label{arg.label}",
                         train_dir = f"../data/datainfo/{arg.task}_trainsample.json",

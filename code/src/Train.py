@@ -112,7 +112,7 @@ class Trainer():
 
         for epoch in range(self.epochs):
             epoch += self.start_epoch
-            print(epoch+1)    
+            print(f"epoch : {epoch+1}")
             self.model.train()
 
             # loging
@@ -140,7 +140,7 @@ class Trainer():
                 
                 # loging
                 if step % 100 == 0:
-                    print(f"{step} : {loss.item()}")
+                    print(f"{step} step: {loss.item()}")
                     train_losses.append(loss.item())
             
             # lr_scheduler
