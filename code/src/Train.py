@@ -13,13 +13,16 @@ import src.Models as models
 from src.Datasets import Datasets
 from src.Utils import label_accuracy_score,add_hist
 from torch.utils.data import DataLoader
+from tqdm import tqdm
+import wandb
 
 
 class Trainer():
-    def __init__(self, 
+    def __init__(self, wandb_name,
                 train_dir, val_dir, size, label,
                 model, n_class, criterion, optimizer, device,
                 epochs, batch_size, encoder_lr, decoder_lr, weight_decay, ails, img_base_path=None, transform=None, lr_scheduler=None, start_epoch=None ):
+        self.wandb_name = wandb_name  # wandb project name
         self.model = model.model
         self.n_class = n_class
         self.epochs = epochs
@@ -36,18 +39,20 @@ class Trainer():
         self.device = device
         self.criterion = criterion
 
-        self.optimizer = optimizer([
-                                    {'params': self.model.encoder.parameters()},
-                                    {'params': self.model.decoder.parameters(), 'lr':decoder_lr}
-                                    ], lr = encoder_lr, weight_decay = weight_decay)
+        self.optimizer = optimizer(
+            [
+                {'params': self.model.encoder.parameters()},
+                {'params': self.model.decoder.parameters(), 'lr':decoder_lr}
+            ], 
+            lr = encoder_lr, 
+            weight_decay = weight_decay
+        )
         
         if lr_scheduler:
             self.lr_scheduler = lr_scheduler(optimizer=self.optimizer)
         else:
             self.lr_scheduler = False
-        
-            
-        
+
         self.ails = ails
         
         if self.one_channel:
@@ -58,17 +63,18 @@ class Trainer():
                     "train_log": []
                 }
         else:
-            categories = {0:{'id':0, 'name':'Background'}}
+            categories = {0: {'id': 0, 'name': 'Background'}}
             categories.update(self.train_dataset.coco.cats)
             self.log = {
-                        "comand" : "python main.py --train train --task part --cls 16",
-                        "start_at_kst": 1,
-                        "end_at_kst": 1,
-                        "train_log": [],
-                        "category" : categories
-                    }
+                "comand" : "python main.py --train train --task part --cls 16",
+                "start_at_kst": 1,
+                "end_at_kst": 1,
+                "train_log": [],
+                "category" : categories
+            }
 
         self.logging_step = 0
+        self.save_log_name = ''
         
         if start_epoch:
             self.start_epoch = start_epoch
@@ -82,25 +88,35 @@ class Trainer():
         train_loader = DataLoader(
             dataset = self.train_dataset,
             shuffle = True, 
-            num_workers = 4,
+            num_workers = 2,
+            pin_memory=True,
             collate_fn = collate_fn,
             batch_size = self.batch_size)
             
         val_loader = DataLoader(
             dataset = self.val_dataset,
             shuffle = False, 
-            num_workers = 4,
+            num_workers = 2,
+            pin_memory=True,
             collate_fn = collate_fn,
             batch_size = self.batch_size)
 
-        
         return train_loader, val_loader
 
     
     def train(self):
         print(f'--- start-training ---')
         now = datetime.datetime.now(timezone('Asia/Seoul'))
-        start_time = now.strftime('%Y-%m-%d %H:%M:%S %Z%z')
+        start_time = now.strftime('%Y-%m-%d_%H:%M:%S_%Z%z')
+        
+        wandb.init(project='car-damage-recognition', entity='yunxchung', name=self.wandb_name)
+
+        if self.one_channel:
+            self.save_log_name = f"../data/result_log/[{self.ails}_label{self.label}]train_log_start:{start_time}.json"
+        else:
+            self.save_log_name = f"../data/result_log/[{self.ails}]train_log_start:{start_time}.json"
+        print(f'save_log_name: {self.save_log_name}')
+
         self.log['start_at_kst'] = start_time
 
         train_data_loader, self.val_data_loader = self.get_dataloader()
@@ -117,14 +133,14 @@ class Trainer():
 
             # loging
             train_losses = []
-            
 
-            for step, (images, masks, _) in enumerate(train_data_loader):
+            for step, (images, masks, _) in enumerate(tqdm(train_data_loader)):
                 
                 # np array -> tensor
                 images = torch.tensor(images).float().to(self.device)
                 masks = torch.tensor(masks).long().to(self.device)
-                
+                # images = torch.from_numpy(images).float().to(self.device)
+                # masks = torch.from_numpy(masks).long().to(self.device)
                 
                 # outputs
                 outputs = self.model(images)
@@ -137,10 +153,12 @@ class Trainer():
                 loss.backward()
                 self.optimizer.step()
                 
-                
                 # loging
                 if step % 100 == 0:
                     print(f"{step} step: {loss.item()}")
+                    wandb.log({
+                        f"label{self.label}_train_step_loss": loss.item()
+                    })
                     train_losses.append(loss.item())
             
             # lr_scheduler
@@ -151,27 +169,41 @@ class Trainer():
                 
             #logging
             base_form = {
-                        "epoch": epoch+1,
-                        "train_loss": [],
-                        "eval": {
-                            "img": [],
-                            "summary": {
-                                "Imou": 0.4,
-                                "Average Loss": 0.2,
-                                "background IoU": 0.9,
-                                "target IoU": 0.3,
-                                "end_at_kst" : 0
-                            }
-                        }
+                "epoch": epoch+1,
+                "train_loss": [],
+                "eval": {
+                    "img": [],
+                    "summary": {
+                        "Imou": 0.4,
+                        "Average Loss": 0.2,
+                        "background IoU": 0.9,
+                        "target IoU": 0.3,
+                        "end_at_kst" : 0
                     }
+                }
+            }
             self.log['train_log'].append(base_form)
             self.log["train_log"][self.logging_step]['train_loss'] = train_losses
 
-            
-            avrg_loss, mIoU, cls_IoU= self.validation(epoch, step, self.val_data_loader)
+            avrg_loss, mIoU, cls_IoU = self.validation(epoch, step, self.val_data_loader)
+
+            if epoch == 0:
+                print(cls_IoU)
+
+            wandb.log({
+                f"label{self.label}_val_mIoU": mIoU,
+                f"label{self.label}val_avrg_loss": avrg_loss
+            })
+            print(f"now_time: {now.strftime('%Y-%m-%d_%H:%M:%S_%Z%z')}")
+
             self.logging_step += 1
-            if (best_mIoU<mIoU):
+
+            # Early stoping
+            stop_signal = 0
+            
+            if (best_mIoU < mIoU):
                 if self.one_channel:
+                    print('one_channel')
                     save_file_name = f"../data/weight/Unet_{self.ails}_label{self.label}_start:{start_time}_{epoch+1}_epoch_IoU_{float(cls_IoU[1]*100):.1}"
                     save_log_name = f"../data/result_log/[{self.ails}_label{self.label}]train_log.json"
                 else:
@@ -179,9 +211,13 @@ class Trainer():
                     save_log_name = f"../data/result_log/[{self.ails}]train_log.json"
                 self.save_model(save_file_name)
                 best_mIoU = mIoU
-
-
-
+                stop_signal = 0
+            else:
+                stop_signal += 1
+                
+            if stop_signal > 5:
+                print(f"early stooping! stop_signal : {stop_signal} times")
+                break
 
     def save_model(self, file_name):
         # check_point = {'net': self.model.state_dict()}
@@ -190,7 +226,6 @@ class Trainer():
         torch.save(self.model.state_dict(), file_name)
         print('MODEL SAVED!!')
         
-
     def validation(self, epoch, step, data_loader):
         n_class = self.n_class
         print('Start validation # epoch {} # step {}'.format(epoch,step))
@@ -202,10 +237,11 @@ class Trainer():
             hist = np.zeros((n_class, n_class))
 
             mIoU_list = []
-            for step, (images, masks, img_ids) in enumerate(data_loader):
+            for step, (images, masks, img_ids) in enumerate(tqdm(data_loader)):
                 images = torch.tensor(images).float().to(self.device)
                 masks = torch.tensor(masks).long().to(self.device)
-
+                # images = torch.from_numpy(images).float().to(self.device)
+                # masks = torch.from_numpy(masks).long().to(self.device)
 
                 outputs = self.model(images)
                 loss = self.criterion(outputs, masks)
@@ -216,7 +252,6 @@ class Trainer():
                 outputs = torch.argmax(outputs, dim=1).detach().cpu().numpy()
                 masks = masks.detach().cpu().numpy()
                 
-                
                 for i, img_id in enumerate(img_ids):
                     
                     h = np.zeros((n_class, n_class))
@@ -224,28 +259,30 @@ class Trainer():
                     h += add_hist(h, masks[i], outputs[i], n_class=n_class)
                     acc, acc_cls, mIoU, fwavacc, cls_IoU = label_accuracy_score(h)
                     
-                    tmp = {"img_id": img_id,
-                            "IoU" : list(cls_IoU)}
+                    tmp = {
+                        "img_id": img_id,
+                        "IoU" : list(cls_IoU)
+                    }
+
                     # sample_logging
                     self.log["train_log"][self.logging_step]['eval']['img'].append(tmp)
-                    
 
                 hist += add_hist(hist, masks, outputs, n_class=n_class)
 
-            
             acc, acc_cls, mIoU, fwavacc, cls_IoU = label_accuracy_score(hist)
             avrg_loss = total_loss / cnt
          
-            
             if self.one_channel:
                 # logging
                 now = datetime.datetime.now(timezone('Asia/Seoul'))
                 end_time = now.strftime('%Y-%m-%d %H:%M:%S %Z%z')
-                tmp = {"mIoU": mIoU.item(),
-                        "average Loss" : avrg_loss.item(), 
-                        "background IoU" : cls_IoU[0].item(),
-                        "target IoU" : cls_IoU[1].item(),
-                        "end_at_kst" : end_time}
+                tmp = {
+                    "mIoU": mIoU.item(),
+                    "average Loss" : avrg_loss.item(), 
+                    "background IoU" : cls_IoU[0].item(),
+                    "target IoU" : cls_IoU[1].item(),
+                    "end_at_kst" : end_time
+                }
                 
                 self.log["end_at_kst"] = end_time
                 self.log["train_log"][self.logging_step]['eval']['summary'] = tmp
@@ -255,11 +292,13 @@ class Trainer():
                 message='Validation #{} #{} Average Loss: {:.4f}, mIoU: {:.4f}, background IoU : {:.4f}, target 1IoU : {:.4f}, target 2IoU : {:.4f}, target 3IoU : {:.4f}, target 3IoU : {:.4f}'.format(epoch, step, avrg_loss, mIoU, cls_IoU[0], cls_IoU[1], cls_IoU[2], cls_IoU[3], cls_IoU[4] )
                 now = datetime.datetime.now(timezone('Asia/Seoul'))
                 end_time = now.strftime('%Y-%m-%d %H:%M:%S %Z%z')
-                tmp = {"mIoU": mIoU.item(),
-                        "average Loss" : avrg_loss.item(), 
-                        "background IoU" : cls_IoU[0].item(),
-                        "target IoU" : list(cls_IoU[1:]),
-                        "end_at_kst" : end_time}
+                tmp = {
+                    "mIoU": mIoU.item(),
+                    "average Loss" : avrg_loss.item(), 
+                    "background IoU" : cls_IoU[0].item(),
+                    "target IoU" : list(cls_IoU[1:]),
+                    "end_at_kst" : end_time
+                }
                 
                 self.log["end_at_kst"] = end_time
                 self.log["train_log"][self.logging_step]['eval']['summary'] = tmp
@@ -271,7 +310,7 @@ class Trainer():
             else:
                 save_log_name = f"../data/result_log/[{self.ails}]train_log.json"
 
-            with open( f"{save_log_name}", "w" ) as f:
-                json.dump(self.log,f)
+            with open( f"{self.save_log_name}", "w" ) as f:
+                json.dump(self.log, f)
 
         return avrg_loss, mIoU, cls_IoU

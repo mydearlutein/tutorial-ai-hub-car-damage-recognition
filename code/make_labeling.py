@@ -88,14 +88,24 @@ def make_new_label(task: str = None):
                     damages = [anno['damage'] for anno in json_data['annotations']]
                     anno_short.update(dict(Counter(damages)))
                     anno_short['total_anns'] = len(damages)
+
+                    # EDA용 column 추가
+                    anno_short['image_width'] = json_data['images']['width']
+                    anno_short['image_height'] = json_data['images']['height']
+                    anno_short['car_size'] = json_data['categories']['supercategory_name']
+                    anno_short['color'] = json_data['annotations'][0]['color']
+                    anno_short['repair'] = json_data['annotations'][0]['repair']
+                    anno_short['year'] = json_data['annotations'][0]['year']
+                    
                     annos.append(anno_short)
                     
         print(f'New annotation samples: {annos[:3]}')
         
         df = pd.DataFrame(annos)
         for col in df.columns[1:]:
-            print(col)
-            df[col] = df[col].astype(float)
+            if col in ["Scratched","Separated","Crushed","Breakage", "total_anns"]:
+                print(col)
+                df[col] = df[col].astype(float)
         
         df.fillna(0, inplace=True)
         print(df)
@@ -109,7 +119,7 @@ def make_new_label(task: str = None):
         df.loc[sample_indices, 'dataset'] = 'test'
         print(df['dataset'].describe())
         
-        df.to_csv('code/damage_labeling_new.csv', index=False)
+        df.to_csv('code/damage_labeling_new2.csv', index=False)
         print('Done.')
 
 
@@ -133,5 +143,5 @@ def check_anno(task: str = None):
 
 if __name__ == '__main__':
     # check_csv()
-    # make_new_label('damage')
-    check_anno('part')
+    make_new_label('damage')
+    # check_anno('part')

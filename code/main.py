@@ -30,6 +30,7 @@ if __name__ == "__main__":
     parser.add_argument('--cls', type = int, help = "n_class")
     parser.add_argument('--dataset', help = "val vs test")
     parser.add_argument('--weight_file', help = "weight file name")
+    parser.add_argument('--wandb_name', help = "wandb project name")    
     
     arg = parser.parse_args()
 
@@ -80,17 +81,18 @@ if __name__ == "__main__":
             for i in range(4):
                 trainer = Trainer(
                             ails = f"{arg.task}",
-                            train_dir = f"../data/datainfo/{arg.task}_{label_schme[i]}_train.json",
-                            val_dir = f"../data/datainfo/{arg.task}_val.json",
+                            wandb_name = arg.wandb_name,
+                            train_dir = f"../data/datainfo/{arg.task}_{label_schme[i]}_train_mini.json",
+                            val_dir = f"../data/datainfo/{arg.task}_val_mini.json",
                             img_base_path = '../data/Dataset/1.원천데이터/damage',
                             size = 256,
                             model = model,
                             label = i,
                             n_class = n_cls,
-                            optimizer = torch.optim.Adam,
+                            optimizer = torch.optim.AdamW,
                             criterion = torch.nn.CrossEntropyLoss(),
                             # epochs = epochs[i],
-                            epochs = 2,
+                            epochs = 10,
                             batch_size = 64,
                             encoder_lr = 1e-06,
                             decoder_lr = 3e-04,
@@ -101,6 +103,7 @@ if __name__ == "__main__":
         elif (arg.task == 'damage') & (arg.method == 'multi'):
             trainer = Trainer(
                         ails = f"{arg.task}_label{arg.label}",
+                        wandb_name = arg.wandb_name,
                         train_dir = f"../data/datainfo/{arg.task}_trainsample.json",
                         val_dir = f"../data/datainfo/{arg.task}_valsample.json",
                         img_base_path = '../data/Dataset/1.원천데이터/damage_part',
@@ -129,6 +132,7 @@ if __name__ == "__main__":
             scheduler = partial(StepLR, step_size=10, gamma=0.9)
             trainer = Trainer(
                 ails = f"{arg.task}",
+                wandb_name = arg.wandb_name,
                 train_dir = f"../data/datainfo/{arg.task}_train.json",
                 val_dir = f"../data/datainfo/{arg.task}_val.json",
                 img_base_path = '../data/Dataset/1.원천데이터/damage_part',
@@ -136,7 +140,7 @@ if __name__ == "__main__":
                 model = model,
                 label = None,
                 n_class = arg.cls,
-                optimizer = torch.optim.Adam,
+                optimizer = torch.optim.AdamW,
                 criterion = torch.nn.CrossEntropyLoss(),
                 epochs = 57,
                 batch_size = 32,
@@ -155,7 +159,7 @@ if __name__ == "__main__":
         # evaluation
         if arg.task == 'damage':
             evaluation = Evaluation(
-                        eval_dir = f"../data/datainfo/damage_{arg.dataset}.json",
+                        eval_dir = f"../data/datainfo/damage_{arg.dataset}_mini.json",
                         size = 256, 
                         model = model, 
                         weight_paths = ["../data/weight/"+n for n in ["[DAMAGE][Scratch_0]Unet.pt","[DAMAGE][Seperated_1]Unet.pt","[DAMAGE][Crushed_2]Unet.pt","[DAMAGE][Breakage_3]Unet.pt"]],
@@ -173,7 +177,7 @@ if __name__ == "__main__":
             else:
                 weight_path = "../data/weight/[PART]Unet.pt"
             evaluation = Evaluation(
-                        eval_dir = f"../data/datainfo/part_{arg.dataset}.json",
+                        eval_dir = f"../data/datainfo/part_{arg.dataset}_mini.json",
                         size = 256, 
                         model = model, 
                         weight_paths = [weight_path],

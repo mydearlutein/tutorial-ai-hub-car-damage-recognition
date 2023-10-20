@@ -96,7 +96,7 @@ class RemakeCOCOformat():
                 train_imgs.append(i)
       
         train = self.rebuilding(train, train_imgs)
-        print(len(train['images'])) 
+        print('train img count:', len(train['images'])) 
         
         if not os.path.exists("data/datainfo"):
             os.makedirs("data/datainfo")
@@ -242,7 +242,11 @@ if __name__ == "__main__":
 
             for dt in ['train','val','test']:
                 tmp = list(label_df.loc[label_df.dataset == dt]['img_id'])
-                data = RemakeCOCOformat(img_dir = dir_name_img, ann_dir = dir_name_label, data_lst = tmp, alis= f'part_{dt}', ratio=0.1, labeling_schme=l_sch, task='part')
+                if dt == 'train': 
+                    tmp = tmp[:50000]
+                else:
+                    tmp = tmp[:5000]
+                data = RemakeCOCOformat(img_dir = dir_name_img, ann_dir = dir_name_label, data_lst = tmp, alis= f'part_{dt}_mini', ratio=0.1, labeling_schme=l_sch, task='part')
                 ### dt_25cls 수정 요망
                 data.coco_json()
             print('Done part')
@@ -255,9 +259,6 @@ if __name__ == "__main__":
             label_df = label_df.loc[label_df.total_anns > 0]
             print(len(label_df))
 
-            idx = 0
-
-
             dir_name_img = 'data/Dataset/1.원천데이터/damage'
             dir_name_label = 'data/Dataset/2.라벨링데이터/damage'
             l_sch = ["Scratched","Separated","Crushed","Breakage"]
@@ -265,13 +266,15 @@ if __name__ == "__main__":
             # training_data
             for l in l_sch:
                 tmp = list(label_df.loc[(label_df['dataset'] == 'train')&(label_df[l]>0)]['index'].values)
-                test = RemakeCOCOformat(img_dir = dir_name_img, ann_dir = dir_name_label, data_lst = tmp, alis=f'damage_{l}_train', ratio=0., labeling_schme=l_sch, task='damage')
+                tmp = tmp[:50000]
+                test = RemakeCOCOformat(img_dir = dir_name_img, ann_dir = dir_name_label, data_lst = tmp, alis=f'damage_{l}_train_mini', ratio=0., labeling_schme=l_sch, task='damage')
                 test.coco_json()
 
             # test, val
             for dt in ['val','test']:
                 tmp = list(label_df.loc[label_df['dataset']==dt]['index'].values)
-                test = RemakeCOCOformat(img_dir = dir_name_img, ann_dir = dir_name_label, data_lst = tmp, alis=f'damage_{dt}', ratio=0, labeling_schme=l_sch, task='damage')
+                tmp = tmp[:5000]
+                test = RemakeCOCOformat(img_dir = dir_name_img, ann_dir = dir_name_label, data_lst = tmp, alis=f'damage_{dt}_mini', ratio=0, labeling_schme=l_sch, task='damage')
                 test.coco_json()
 
 
